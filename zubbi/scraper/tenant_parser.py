@@ -29,7 +29,6 @@ class TenantParser:
     def __init__(self, sources_file=None, sources_repo=None):
         self.sources = None
         self.repo_map = {}
-        self.tenants = []
         # Initial call to load the sources file/repo
         self.reload_sources(sources_file, sources_repo)
 
@@ -44,9 +43,8 @@ class TenantParser:
         self.parse()
 
     def parse(self):
-        # Clear repo_map and tenant list first
+        # Clear tenant_config first
         self.repo_map.clear()
-        self.tenants.clear()
 
         for tenant_src in self.sources:
             sources = tenant_src["tenant"]["source"]
@@ -58,8 +56,7 @@ class TenantParser:
                 for project_type, projects in source.items():
                     for project in projects:
                         self._update_repo_map(project, connection_name, tenant_name)
-
-            self.tenants.append(tenant_name)
+        print(self.repo_map)
 
     def _update_repo_map(self, project, connection_name, tenant):
         project_name, exclude = self._extract_project(project)
@@ -67,13 +64,12 @@ class TenantParser:
         # Map the current tenant to the current repository
         repo_tenant_entry = self.repo_map.setdefault(
             project_name,
-            {"tenants": {"jobs": [], "roles": []}, "connection_name": connection_name},
+            # TODO (felix): Could there be multiple repos with the same name, but
+            # different connections? Currently, the first match wins.
+            {"tenants": [], "connection_name": connection_name},
         )
 
-        # Update repo_tenant mapping
-        if "jobs" not in exclude:
-            repo_tenant_entry["tenants"]["jobs"].append(tenant)
-        repo_tenant_entry["tenants"]["roles"].append(tenant)
+        repo_tenant_entry["tenants"].append(tenant)
 
     def _extract_project(self, project):
         project_name = project

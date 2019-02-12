@@ -339,11 +339,18 @@ def scrape_full(connections, tenant_parser, repos=None):
         # tenant configuration
         tenant_parser.parse()
         repo_map = tenant_parser.repo_map
-        tenant_list = tenant_parser.tenants
+
+        # Each tenant should only be scraped once. The list of tenants will be
+        # built based on the repositories that are going to be scraped.
+        tenants = set()
+        for repo_name, repo_data in repo_map.items():
+            # Add the tenants from each repo
+            tenants.update(repo_data["tenants"])
+
         scrape_time = datetime.now(timezone.utc)
         _scrape_repo_map(
             repo_map,
-            tenant_list,
+            tenants,
             connections,
             scrape_time,
             repo_cache={},
@@ -368,14 +375,17 @@ def scrape_repo_list(
     # like this.
     tenant_parser.parse()
     repo_map = tenant_parser.repo_map
-    tenant_list = tenant_parser.tenants
+
+    # We want each tenant to be scraped only once (even so it's part of multiple repos)
+    tenants = set()
     filtered_repo_map = {}
     # Get the relevant repositories from the tenant parser's repo map.
     # Repos which are not part of them won't be scraped.
     for repo_name in repo_list:
         # Get the tenants from the repo map. If we get no tenants, we assume
         # that the repo is not part of the tenant config.
-        repo_data = repo_map.get(repo_name, None)
+        repo_data = repo_map.get(repo_name)
+        # If we didn't found the repo in either of the tenants, we skip it
         if repo_data is None:
             LOGGER.warning(
                 "Repo '%s' is not part of our tenant sources. Skip scraping.", repo_name
@@ -383,18 +393,15 @@ def scrape_repo_list(
             continue
         # TODO Simplify this with dict/list comprehension
         filtered_repo_map[repo_name] = repo_data
+        # Add the tenants for this repo to the overall list of tenants that should be scraped
+        tenants.update(repo_data["tenants"])
 
     if not filtered_repo_map:
         LOGGER.info("Repo list is empty, nothing to scrape.")
         return
 
     return _scrape_repo_map(
-        filtered_repo_map,
-        tenant_list,
-        connections,
-        scrape_time,
-        repo_cache,
-        delete_only,
+        filtered_repo_map, tenants, connections, scrape_time, repo_cache, delete_only
     )
 
 
@@ -405,10 +412,11 @@ def _scrape_repo_map(
         "Using scraping time: %s", datetime.strftime(scrape_time, "%Y-%m-%dT%H:%M:%SZ")
     )
 
-    # TODO It would be great if the tenant_list contains only the relevant tenants based
-    # on the repository map (or whatever is the correct source). In other words:
-    # It should only contain the tenants which are really "updated".
-    tenant_list = []
+    # Contains the list of ES documents (zuul-tenants) to be updated by this run
+    zuul_tenants = []
+
+    # This tenant_list should only contain the tenants that might have changed based on
+    # the list of repositories that are to be scraped.
     for tenant_name in tenants:
 
         # TODO (felix): Not sure if this is the right place, but for an initial version
@@ -420,7 +428,7 @@ def _scrape_repo_map(
         tenant = ZuulTenant(meta={"id": uuid})
         tenant.tenant_name = tenant_name
         tenant.scrape_time = scrape_time
-        tenant_list.append(tenant)
+        zuul_tenants.append(tenant)
 
     # Simplify the list of repos for log output and keyword match in Elasticsearch
     # NOTE (fschmidt): Elasticsearch can only work with lists
@@ -439,8 +447,10 @@ def _scrape_repo_map(
         # Update tenant sources
 
         # First, store the tenants in Elasticsearch
-        LOGGER.info("Updating %d tenant definitions in Elasticsearch", len(tenant_list))
-        ZuulTenant.bulk_save(tenant_list)
+        LOGGER.info(
+            "Updating %d tenant definitions in Elasticsearch", len(zuul_tenants)
+        )
+        ZuulTenant.bulk_save(zuul_tenants)
 
         LOGGER.info("Scraping the following repositories: %s", repo_list)
         es_repos = []
@@ -500,6 +510,7 @@ def _scrape_repo_map(
         for repo_name in repo_list:
             repo_cache.pop(repo_name, None)
 
+    # TODO (felix): After changing the glue code, do we need to change something regarding cleanup?
     # In both cases we want to delete outdated data.
     # In case of delete_only, this will be everything!
     # NOTE (felix): In case of a config error, the repo is removed from this list
@@ -531,6 +542,9 @@ def scrape_repo(repo, tenants, scrape_time):
 
 def scrape_tenant(tenant, connections, scrape_time):
     LOGGER.info("Scraping tenant '%s'", tenant)
+    # TODO (felix): How to get rid of this hardcoded connection?
+    # Iterate over each zuul-type connection? - Theoretically there could be
+    # more than one zuul instance (although it doesn't really make sense)
     jobs = TenantScraper(tenant, connections.get("zuul-api"), scrape_time).scrape()
     if jobs:
         LOGGER.info("Updating %d job definitions in Elasticsearch", len(jobs))
