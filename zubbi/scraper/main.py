@@ -40,12 +40,13 @@ from zubbi.models import (
 from zubbi.scraper.connections.gerrit import GerritConnection
 from zubbi.scraper.connections.git import GitConnection
 from zubbi.scraper.connections.github import GitHubConnection
+from zubbi.scraper.connections.zuul import ZuulConnection
 from zubbi.scraper.exceptions import ScraperConfigurationError
 from zubbi.scraper.repo_parser import RepoParser
 from zubbi.scraper.repos.gerrit import GerritRepository
 from zubbi.scraper.repos.git import GitRepository
 from zubbi.scraper.repos.github import GitHubRepository
-from zubbi.scraper.scraper import Scraper
+from zubbi.scraper.scraper import Scraper, TenantScraper
 from zubbi.scraper.tenant_parser import TenantParser
 
 
@@ -55,6 +56,7 @@ CONNECTIONS = {
     "git": GitConnection,
     "github": GitHubConnection,
     "gerrit": GerritConnection,
+    "zuul": ZuulConnection,
 }
 REPOS = {"git": GitRepository, "github": GitHubRepository, "gerrit": GerritRepository}
 RepoItem = namedtuple("RepoItem", "name scraped provider")
@@ -399,12 +401,20 @@ def scrape_repo_list(
 def _scrape_repo_map(
     repo_map, tenants, connections, scrape_time, repo_cache, delete_only
 ):
+    LOGGER.info(
+        "Using scraping time: %s", datetime.strftime(scrape_time, "%Y-%m-%dT%H:%M:%SZ")
+    )
+
     # TODO It would be great if the tenant_list contains only the relevant tenants based
     # on the repository map (or whatever is the correct source). In other words:
     # It should only contain the tenants which are really "updated".
-
     tenant_list = []
     for tenant_name in tenants:
+
+        # TODO (felix): Not sure if this is the right place, but for an initial version
+        # it should be sufficient.
+        scrape_tenant(tenant_name, connections, scrape_time)
+
         # Build the tenant data for Elasticsearch
         uuid = hashlib.sha1(str.encode(tenant_name)).hexdigest()
         tenant = ZuulTenant(meta={"id": uuid})
@@ -415,10 +425,6 @@ def _scrape_repo_map(
     # Simplify the list of repos for log output and keyword match in Elasticsearch
     # NOTE (fschmidt): Elasticsearch can only work with lists
     repo_list = list(repo_map.keys())
-
-    LOGGER.info(
-        "Using scraping time: %s", datetime.strftime(scrape_time, "%Y-%m-%dT%H:%M:%SZ")
-    )
 
     if not delete_only:
         # TODO (fschmidt): This should only be done once during initialization,
@@ -521,6 +527,14 @@ def scrape_repo(repo, tenants, scrape_time):
 
     LOGGER.info("Updating %d role definitions in Elasticsearch", len(roles))
     AnsibleRole.bulk_save(roles)
+
+
+def scrape_tenant(tenant, connections, scrape_time):
+    LOGGER.info("Scraping tenant '%s'", tenant)
+    jobs = TenantScraper(tenant, connections.get("zuul-api"), scrape_time).scrape()
+    if jobs:
+        LOGGER.info("Updating %d job definitions in Elasticsearch", len(jobs))
+        ZuulJob.bulk_save(jobs)
 
 
 def delete_outdated(scrape_time, indices, extra_filter=None):

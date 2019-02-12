@@ -36,6 +36,11 @@ CONNECTIONS = {
         'user': '<username>',
         'password': '<password',
     },
+    # Zuul example
+    '<name>': {
+        'provider': 'zuul',
+        'url': '<zuul_web_url>',
+    }
 }
 
 GITHUB_WEBHOOK_SECRET = '<secret>'

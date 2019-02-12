@@ -12,8 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
 import logging
 
+from zubbi.doc import render_sphinx, SphinxBuildError
+from zubbi.models import ZuulJob
+from zubbi.scraper.connections.zuul import ZuulApi
 from zubbi.scraper.exceptions import CheckoutError
 
 
@@ -125,3 +129,61 @@ class Scraper:
                 return match
             except CheckoutError as e:
                 LOGGER.exception(e)
+
+
+class TenantScraper:
+    def __init__(self, tenant, zuul_con, scrape_time):
+        self.tenant = tenant
+        self.zuul_api = ZuulApi(zuul_con)
+        self.scrape_time = scrape_time
+
+    def scrape(self):
+        tenant_jobs = self.zuul_api.get_jobs(self.tenant)
+        if not tenant_jobs:
+            LOGGER.warning("No job list to parse for tenant '%s'", self.tenant)
+            return
+        LOGGER.info(
+            "Found %d job definitions for tenant '%s", len(tenant_jobs), self.tenant
+        )
+        job_definitions = self.parse_job_definitions(tenant_jobs)
+        return job_definitions
+
+    def parse_job_definitions(self, tenant_jobs):
+        LOGGER.info("Parsing job definitions for tenant '%s", self.tenant)
+        job_definitions = []
+        for job_name, jobs in tenant_jobs.items():
+            # How to deal with this job-list?
+            for job in jobs:
+                repo = None
+                source_context = job.get("source_context")
+                if source_context:
+                    repo = job.get("source_context", {}).get("project")
+                uuid = hashlib.sha1(
+                    str.encode("{}{}".format(repo, job_name))
+                ).hexdigest()
+                zuul_job = ZuulJob(meta={"id": uuid})
+                zuul_job.job_name = job_name
+                zuul_job.repo = repo
+                zuul_job.tenants = [self.tenant]
+                zuul_job.private = False
+                zuul_job.scrape_time = self.scrape_time
+                # TODO line_start and line_end
+                # TODO last_updated
+                # TODO url
+                zuul_job.description = job["description"]
+                try:
+                    doc = render_sphinx(zuul_job.description)
+                    zuul_job.description_html = doc["html"]
+                    zuul_job.platforms = doc["platforms"]
+                    # TODO Get .. include:: files for Sphinx
+                except SphinxBuildError as exc:
+                    LOGGER.warning(
+                        "Description of job '%s' could not be " "converted to HTML: %s",
+                        job_name,
+                        exc,
+                    )
+
+                zuul_job.parent = job["parent"]
+
+                job_definitions.append(zuul_job)
+        return job_definitions
