@@ -73,7 +73,7 @@ class RepoParser:
                 job = ZuulJob(meta={"id": uuid})
                 job.job_name = job_name
                 job.repo = self.repo.name
-                job.tenants = self.tenants["jobs"]
+                job.tenants = self.tenants.get("jobs", [])
                 job.private = self.repo.private
                 job.scrape_time = self.scrape_time
                 job.line_start = job_def["__line_start__"]
@@ -118,7 +118,7 @@ class RepoParser:
             role = AnsibleRole(meta={"id": uuid})
             role.role_name = role_name
             role.repo = self.repo.name
-            role.tenants = self.tenants["roles"]
+            role.tenants = self.tenants.get("roles", [])
             role.private = self.repo.private
             role.url = self.repo.url_for_directory("roles/{}".format(role_name))
             role.scrape_time = self.scrape_time

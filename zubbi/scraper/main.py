@@ -457,7 +457,6 @@ def _scrape_repo_map(
 
         for repo_name, repo_data in repo_map.items():
             # Extract the data from the repo_data
-            tenants = repo_data["tenants"]
             connection_name = repo_data["connection_name"]
 
             cached_repo = repo_cache.setdefault(repo_name, repo_data)
@@ -500,7 +499,7 @@ def _scrape_repo_map(
             es_repos.append(es_repo)
 
             # scrape the repo if is part of the tenant config
-            scrape_repo(repo, tenants, scrape_time)
+            scrape_repo(repo, scrape_time)
 
         # Store the information for all repos we just scraped in Elasticsearch
         LOGGER.info("Updating %d repo definitions in Elasticsearch", len(es_repos))
@@ -528,9 +527,11 @@ def _scrape_repo_map(
     )
 
 
-def scrape_repo(repo, tenants, scrape_time):
+def scrape_repo(repo, scrape_time):
     job_files, role_files = Scraper(repo).scrape()
 
+    # TODO (felix): How to get the tenant info for roles?
+    tenants = {}
     jobs, roles = RepoParser(repo, tenants, job_files, role_files, scrape_time).parse()
 
     LOGGER.info("Updating %d job definitions in Elasticsearch", len(jobs))
