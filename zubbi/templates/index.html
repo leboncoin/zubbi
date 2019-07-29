@@ -23,6 +23,38 @@
     <div class="text-center pt-4">
       Or use the <a href="{{ url_for('zubbi.search', advanced=True) }}">advanced search <i class="fas fa-search-plus"></i></a>
     </div>
+    {% if result|length > 0 %}
+    <h4 class="my-5 text-muted">These roles may be interesting</h4>
+    {% for row in result|batch(3) %}
+    <div class="row">
+      <div class="card-columns col">
+      {%- for match in row %}
+        <div class="card">
+          <div class="card-header">
+            {% if match is role_type -%}
+              <i class="fas fa-cubes"></i>
+            {% else -%}
+              <i class="fas fa-play-circle"></i>
+            {% endif -%}
+            {{ match|block_type|capitalize }}
+            {% if match.last_updated %}
+              <i class="float-right"><small>{{ match.last_updated | prettydate }}</small></i>
+            {% endif %}
+          </div>
+          <div class="card-body">
+            <h5 class="card-title">
+              {{ match.name }}
+            </h5>
+            <h6 class="card-subtitle mb-2 text-muted">{{ match.repo }}</h6>
+            <p class="card-text">{% if match.description_rendered %}{{ match.description_rendered.split('\n')|first|striptags }}{% endif %}</p>
+            <a href="{{ url_for('zubbi.details', repo=match.repo, block_type=match|block_type, name=match.name) }}" class="btn btn-primary"><i class="fas fa-info-circle"></i> Show details</a>
+          </div>
+        </div>
+      {%- endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    {% endif %}
   </div>
 </div>
 {% endblock %}

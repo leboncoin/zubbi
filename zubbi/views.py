@@ -86,7 +86,21 @@ class IndexView(ZubbiMethodView):
     template_name = "index.html"
 
     def get(self):
-        context = self.get_context()
+        extra_filter = Q("term", private=False)
+        featured_roles = current_app.config.get("FEATURED_ROLES", [])
+        query = " OR ".join(featured_roles)
+        block_class = class_from_block_type("role")
+        search = BlockSearch(block_class=block_class).search_query(
+            query, ["role_name"], True, extra_filter
+        )
+        result = search[0:6].execute()
+        context = {
+            "result": result,
+            "default_search_fields": DEFAULT_SEARCH_FIELDS,
+            "searchable_block_types": SEARCHABLE_BLOCK_TYPES,
+            "searchable_fields": SEARCHABLE_FIELDS,
+        }
+        context = {**self.get_context(), **context}
         return render_template(self.template_name, **context)
 
 
