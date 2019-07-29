@@ -62,3 +62,12 @@ ZMQ_SUB_SOCKET_ADDRESS = 'tcp://localhost:5556'
 ZMQ_SUB_TIMEOUT = 300  # default
 # Interval after which a repo will be scraped in any case (in hours)
 FORCE_SCRAPE_INTERVAL = 24  # default
+
+# Display featured roles on home page using this settings
+# An exact match search is done on role name only, and up to 6
+# role cards are displayed on the homepage
+FEATURED_ROLES = [
+    'tox',
+    'docker-image',
+    'upload-artifactory'
+]
